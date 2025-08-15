@@ -3,7 +3,7 @@ import readline from 'readline';
 import { NeuralNetwork } from '../NeuralNetwork';
 import '../utils/arrayUtils';
 
-const nnModelFile = './models/model.json';
+const nnModelFile = './models/model-v2-90%.json';
 
 async function getMnistData(filename: string): Promise<[number[][], number[][], number[]]> {
   const stream = fs.createReadStream(filename, {
@@ -78,10 +78,10 @@ function train({
     pretrainedNetwork != undefined
       ? pretrainedNetwork
       : new NeuralNetwork(
-          [784, 16, 16, 10],
+          [784, 64, 64, 10],
           isCorrect,
-          0.05,
-          NeuralNetwork.activationFunctions.leakyRelu,
+          0.01,
+          NeuralNetwork.activationFunctions.sigmoid,
           NeuralNetwork.costFunctions.crossEntropy,
           NeuralNetwork.outputLayerActivationFunctions.softmax,
         );
@@ -156,7 +156,7 @@ function train({
 async function doTrain() {
   const [inputBatches_train, targetBatches_train, labelBatches_train] = await getMnistDataBatched(
     './src/datasets/MNIST_CSV/mnist_train.csv',
-    256,
+    32,
   );
   const [inputData_test, targetData_test, labelData_test] = await getMnistData(
     './src/datasets/MNIST_CSV/mnist_test.csv',
