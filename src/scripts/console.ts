@@ -131,7 +131,7 @@ function train({
 
     // training stats
     const trainingCost = totalTrainingIterationCost / batchSize;
-    const trainingAccuracy = totalTrainingIterationAccuracy / batchSize;
+    const trainingAccuracy = (totalTrainingIterationAccuracy / batchSize) * 100;
     console.log(
       `Training | Cost: ${trainingCost.toFixed(2)}; Accuracy: ${trainingAccuracy.toFixed(2)}%`,
     );
@@ -142,7 +142,7 @@ function train({
 
       // testing stats
       const testingCost = testingStats.averageCost;
-      const testingAccuracy = testingStats.accuracy;
+      const testingAccuracy = testingStats.accuracy * 100;
       console.log(
         `Testing | Cost: ${testingCost.toFixed(2)}; Accuracy: ${testingAccuracy.toFixed(2)}%`,
       );
@@ -190,9 +190,9 @@ async function testRun() {
   );
 
   const testingStats = nn.testBatch(inputData_test, targetData_test, labelData_test);
-  console.log(
-    `Cost: ${testingStats.averageCost.toFixed(2)}; Accuracy: ${testingStats.accuracy.toFixed(2)}%`,
-  );
+  const testingCost = testingStats.averageCost;
+  const testingAccuracy = testingStats.accuracy * 100;
+  console.log(`Cost: ${testingCost.toFixed(2)}; Accuracy: ${testingAccuracy.toFixed(2)}%`);
 }
 
 (async () => {
