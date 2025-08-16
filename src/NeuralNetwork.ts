@@ -128,7 +128,7 @@ export class NeuralNetwork<T> {
   trainBatch(
     inputs: number[][],
     target: number[][],
-    labels: number[],
+    labels: T[],
   ): { averageCost: number; accuracy: number } {
     if (inputs.length !== target.length) {
       throw new Error(
@@ -147,99 +147,22 @@ export class NeuralNetwork<T> {
     }
 
     for (let sample = 0; sample < batchSize; sample++) {
-      // create variables for caching
-      const prenormalizedLayers: number[][] = [];
-      const normalizedLayers: number[][] = [];
-
-      // feed forward with caching
-      let current: Matrix = Matrix.from1dArray(inputs[sample]);
-      for (let layer = 0; layer < this.weights.length; layer++) {
-        current = Matrix.multiply(this.weights[layer], current).add(this.biases[layer]);
-        prenormalizedLayers.push(current.to1dArray()); // matrix (that is actually a vector) to number[]
-
-        // only apply activation function if it isn't the last layer or there isn't an output layer activation function
-        if (layer < this.weights.length - 1 || this.outputLayerActivationFn == null) {
-          current = current.map(this.activationFn); // normalize by applying activation function
-          normalizedLayers.push(current.to1dArray()); // vector to number[]
-        }
-      }
-
-      const prenormalizedOut: number[] = current.to1dArray();
-      const out =
-        this.outputLayerActivationFn == null
-          ? prenormalizedOut
-          : this.outputLayerActivationFn(prenormalizedOut);
-
-      // calculate cost and accuracy
-      const cost = out.reduce(
-        (acc, actual, i) => acc + this.costFunction(target[sample][i], actual),
-        0,
+      const { cost, isCorrect, derivWeights, derivBiases } = this.trainOne(
+        inputs[sample],
+        target[sample],
+        labels[sample],
+        false,
       );
       totalBatchCost += cost;
-      if (this.outputMappingFn(out) === labels[sample]) correct++;
+      if (isCorrect) correct++;
 
-      // backpropagate
-      let derivCostWrtToLayerNodes: number[] = [];
-      if (this.outputLayerActivationFn == null) {
-        derivCostWrtToLayerNodes = out.map((actual, i) =>
-          this.derivCostFunction(target[sample][i], actual),
-        );
-      } else if (
-        this.outputLayerActivationFn === NeuralNetwork.outputLayerActivationFunctions.softmax[0] &&
-        this.costFunction === NeuralNetwork.costFunctions.crossEntropy[0]
-      ) {
-        // this combination of cost function + output layer activation function makes the math easy (optimization improvement)
-        derivCostWrtToLayerNodes = out.map((actual, i) => actual - target[sample][i]);
-      } else {
-        const derivCostWrtOut = out.map((actual, i) =>
-          this.derivCostFunction(target[sample][i], actual),
-        );
-
-        const n = out.length;
-        derivCostWrtToLayerNodes = Array(n).fill(0);
-        for (let i = 0; i < n; i++) {
-          for (let j = 0; j < n; j++) {
-            const derivOut_jWrtPrenormalizedOut_i = this.derivOutputLayerActivationFn!(
-              out,
-              prenormalizedOut,
-              i,
-              j,
-            );
-            derivCostWrtToLayerNodes[i] += derivCostWrtOut[j] * derivOut_jWrtPrenormalizedOut_i;
-          }
-        }
-      }
-
-      for (let layer = this.weights.length - 1; layer >= 0; layer--) {
-        const derivCostWrtFromLayerNodes: number[] = Array(this.structure[layer]).fill(0);
-        for (let to = 0; to < this.structure[layer + 1]; to++) {
-          // partial derivative of cost with respect to bias
-          const derivCostWrtBias_to =
-            derivCostWrtToLayerNodes[to] *
-            (layer < this.weights.length - 1 || this.outputLayerActivationFn == null
-              ? this.derivActivationFn(prenormalizedLayers[layer][to])
-              : 1);
-          totalDerivBiases[layer].data[to][0] += derivCostWrtBias_to;
-
-          for (let from = 0; from < this.structure[layer]; from++) {
-            // partial derivative of cost with respect to weight
-            const derivCostWrtWeight_to_from =
-              derivCostWrtBias_to *
-              (layer > 0 ? normalizedLayers[layer - 1][from] : inputs[sample][from]);
-            totalDerivWeights[layer].data[to][from] += derivCostWrtWeight_to_from;
-
-            // part of the partial derivative of cost with respect to 'from layer node'
-            const sumNode_toDerivCostWrtNode_from =
-              derivCostWrtBias_to * this.weights[layer].data[to][from];
-            derivCostWrtFromLayerNodes[from] += sumNode_toDerivCostWrtNode_from;
-          }
-        }
-
-        derivCostWrtToLayerNodes = derivCostWrtFromLayerNodes;
+      for (let layer = 0; layer < this.weights.length; layer++) {
+        totalDerivWeights[layer] = totalDerivWeights[layer].add(derivWeights[layer]);
+        totalDerivBiases[layer] = totalDerivBiases[layer].add(derivBiases[layer]);
       }
     }
 
-    for (let layer = 0; layer < this.structure.length - 1; layer++) {
+    for (let layer = 0; layer < this.weights.length; layer++) {
       // calculate the shift needed
       const layerGradientWeights = totalDerivWeights[layer].map(
         (x) => (x / batchSize) * this.learningRate,
@@ -251,9 +174,149 @@ export class NeuralNetwork<T> {
       this.weights[layer] = this.weights[layer].subtract(layerGradientWeights);
       this.biases[layer] = this.biases[layer].subtract(layerGradientBiases);
     }
+
     return {
       averageCost: totalBatchCost / batchSize,
       accuracy: correct / batchSize,
+    };
+  }
+
+  trainOne(
+    inputs: number[],
+    target: number[],
+    label: T,
+    dryRun?: false,
+  ): {
+    cost: number;
+    isCorrect: boolean;
+    derivWeights: Matrix[];
+    derivBiases: Matrix[];
+    derivCostWrtToInputs: number[];
+  };
+  trainOne(
+    inputs: number[],
+    target: number[],
+    label: T,
+    dryRun: true,
+  ): {
+    cost: number;
+    isCorrect: boolean;
+    derivCostWrtToInputs: number[];
+  };
+
+  trainOne(
+    inputs: number[],
+    target: number[],
+    label: T,
+    dryRun = false,
+  ): {
+    cost: number;
+    isCorrect: boolean;
+    derivWeights?: Matrix[];
+    derivBiases?: Matrix[];
+    derivCostWrtToInputs: number[];
+  } {
+    // create variables for caching
+    const prenormalizedLayers: number[][] = [];
+    const normalizedLayers: number[][] = [];
+
+    // feed forward with caching
+    let current: Matrix = Matrix.from1dArray(inputs);
+    for (let layer = 0; layer < this.weights.length; layer++) {
+      current = Matrix.multiply(this.weights[layer], current).add(this.biases[layer]);
+      prenormalizedLayers.push(current.to1dArray()); // matrix (that is actually a vector) to number[]
+
+      // only apply activation function if it isn't the last layer or there isn't an output layer activation function
+      if (layer < this.weights.length - 1 || this.outputLayerActivationFn == null) {
+        current = current.map(this.activationFn); // normalize by applying activation function
+        normalizedLayers.push(current.to1dArray()); // vector to number[]
+      }
+    }
+
+    const prenormalizedOut: number[] = current.to1dArray();
+    const out =
+      this.outputLayerActivationFn == null
+        ? prenormalizedOut
+        : this.outputLayerActivationFn(prenormalizedOut);
+
+    // calculate cost and accuracy
+    const cost = out.reduce((acc, actual, i) => acc + this.costFunction(target[i], actual), 0);
+    const isCorrect = this.outputMappingFn(out) === label;
+
+    // backpropagate
+    let derivCostWrtToLayerNodes: number[] = [];
+    if (this.outputLayerActivationFn == null) {
+      derivCostWrtToLayerNodes = out.map((actual, i) => this.derivCostFunction(target[i], actual));
+    } else if (
+      this.outputLayerActivationFn === NeuralNetwork.outputLayerActivationFunctions.softmax[0] &&
+      this.costFunction === NeuralNetwork.costFunctions.crossEntropy[0]
+    ) {
+      // this combination of cost function + output layer activation function makes the math easy (optimization improvement)
+      derivCostWrtToLayerNodes = out.map((actual, i) => actual - target[i]);
+    } else {
+      const derivCostWrtOut = out.map((actual, i) => this.derivCostFunction(target[i], actual));
+
+      const n = out.length;
+      derivCostWrtToLayerNodes = Array(n).fill(0);
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          const derivOut_jWrtPrenormalizedOut_i = this.derivOutputLayerActivationFn!(
+            out,
+            prenormalizedOut,
+            i,
+            j,
+          );
+          derivCostWrtToLayerNodes[i] += derivCostWrtOut[j] * derivOut_jWrtPrenormalizedOut_i;
+        }
+      }
+    }
+
+    const derivWeights: Matrix[] = [];
+    const derivBiases: Matrix[] = [];
+    if (!dryRun) {
+      for (let i = 1; i < this.structure.length; i++) {
+        derivWeights.push(new Matrix(this.structure[i], this.structure[i - 1]));
+        derivBiases.push(new Matrix(this.structure[i], 1));
+      }
+    }
+
+    for (let layer = this.weights.length - 1; layer >= 0; layer--) {
+      const derivCostWrtFromLayerNodes: number[] = Array(this.structure[layer]).fill(0);
+      for (let to = 0; to < this.structure[layer + 1]; to++) {
+        // partial derivative of cost with respect to bias
+        const derivCostWrtBias_to =
+          derivCostWrtToLayerNodes[to] *
+          (layer < this.weights.length - 1 || this.outputLayerActivationFn == null
+            ? this.derivActivationFn(prenormalizedLayers[layer][to])
+            : 1);
+        if (!dryRun) {
+          derivBiases[layer].data[to][0] = derivCostWrtBias_to;
+        }
+
+        for (let from = 0; from < this.structure[layer]; from++) {
+          if (!dryRun) {
+            // partial derivative of cost with respect to weight
+            const derivCostWrtWeight_to_from =
+              derivCostWrtBias_to * (layer > 0 ? normalizedLayers[layer - 1][from] : inputs[from]);
+            derivWeights[layer].data[to][from] += derivCostWrtWeight_to_from;
+          }
+
+          // part of the partial derivative of cost with respect to 'from layer node'
+          const sumNode_toDerivCostWrtNode_from =
+            derivCostWrtBias_to * this.weights[layer].data[to][from];
+          derivCostWrtFromLayerNodes[from] += sumNode_toDerivCostWrtNode_from;
+        }
+      }
+
+      derivCostWrtToLayerNodes = derivCostWrtFromLayerNodes;
+    }
+
+    return {
+      cost,
+      isCorrect,
+      ...(!dryRun ? { derivWeights } : {}),
+      ...(!dryRun ? { derivBiases } : {}),
+      derivCostWrtToInputs: derivCostWrtToLayerNodes,
     };
   }
 
