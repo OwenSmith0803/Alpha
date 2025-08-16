@@ -1,6 +1,6 @@
 import fs from 'fs';
 import readline from 'readline';
-import { NeuralNetwork } from '../NeuralNetwork';
+import { Network, NeuralNetwork } from '../NeuralNetwork';
 import '../utils/arrayUtils';
 
 const nnModelFile = './models/model-v3.json';
@@ -63,8 +63,8 @@ function train({
   targetData_test?: number[][];
   labelData_test?: number[];
   iterations: number;
-  pretrainedNetwork?: NeuralNetwork<number> | undefined;
-}): NeuralNetwork<number> {
+  pretrainedNetwork?: Network<number> | undefined;
+}): Network<number> {
   function outputMappingFn(out: number[]) {
     let guess = 0;
     for (let i = 1; i < out.length; i++) {
@@ -78,6 +78,7 @@ function train({
       ? pretrainedNetwork
       : new NeuralNetwork(
           [784, 64, 64, 10],
+          outputMappingFn,
           outputMappingFn,
           0.01,
           NeuralNetwork.activationFunctions.sigmoid,
@@ -163,7 +164,7 @@ async function doTrain() {
 
   // initialize/train neural network
   const nn = fs.existsSync(nnModelFile)
-    ? NeuralNetwork.deserialize<number>(nnModelFile)
+    ? NeuralNetwork.deserialize<number, number>(nnModelFile)
     : undefined;
   train({
     inputBatches_train,
@@ -178,9 +179,9 @@ async function doTrain() {
 }
 
 async function testRun() {
-  let nn: NeuralNetwork<number>;
+  let nn: Network<number>;
   if (fs.existsSync(nnModelFile)) {
-    nn = NeuralNetwork.deserialize<number>(nnModelFile);
+    nn = NeuralNetwork.deserialize<number, number>(nnModelFile);
   } else {
     throw new Error(`Missing model at ${nnModelFile}`);
   }

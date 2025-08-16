@@ -12,7 +12,11 @@ export type OutputLayerActivationFunctionDeriv = (
   j: number,
 ) => number;
 
-export class NeuralNetwork<T> {
+// T is the outputted type from the .predict() method. U is the label type
+// Since T and U are usually the same, this type annotation can make code more concise
+export type Network<T> = NeuralNetwork<T, T>;
+
+export class NeuralNetwork<T, U> {
   // first index represents the function; the second index represents the function's derivative
   static activationFunctions: Record<string, [MappingFn, MappingFn]> = {
     relu: [(x) => (x >= 0 ? x : 0), (x) => (x >= 0 ? 1 : 0)],
@@ -66,6 +70,7 @@ export class NeuralNetwork<T> {
   constructor(
     structure: number[],
     protected outputMappingFn: (out: number[]) => T,
+    protected isCorrectFn: (out: number[]) => U,
     protected learningRate = 0.01,
     [activationFn, derivActivationFn]: [MappingFn, MappingFn] = NeuralNetwork.activationFunctions
       .relu,
@@ -128,7 +133,7 @@ export class NeuralNetwork<T> {
   trainBatch(
     inputs: number[][],
     target: number[][],
-    labels: T[],
+    labels: U[],
   ): { averageCost: number; accuracy: number } {
     if (inputs.length !== target.length) {
       throw new Error(
@@ -184,7 +189,7 @@ export class NeuralNetwork<T> {
   trainOne(
     inputs: number[],
     target: number[],
-    label: T,
+    label: U,
     dryRun?: false,
   ): {
     cost: number;
@@ -196,7 +201,7 @@ export class NeuralNetwork<T> {
   trainOne(
     inputs: number[],
     target: number[],
-    label: T,
+    label: U,
     dryRun: true,
   ): {
     cost: number;
@@ -207,7 +212,7 @@ export class NeuralNetwork<T> {
   trainOne(
     inputs: number[],
     target: number[],
-    label: T,
+    label: U,
     dryRun = false,
   ): {
     cost: number;
@@ -241,7 +246,7 @@ export class NeuralNetwork<T> {
 
     // calculate cost and accuracy
     const cost = out.reduce((acc, actual, i) => acc + this.costFunction(target[i], actual), 0);
-    const isCorrect = this.outputMappingFn(out) === label;
+    const isCorrect = this.isCorrectFn(out) === label;
 
     // backpropagate
     let derivCostWrtToLayerNodes: number[] = [];
@@ -323,7 +328,7 @@ export class NeuralNetwork<T> {
   testBatch(
     inputs: number[][],
     target: number[][],
-    labels: T[],
+    labels: U[],
   ): { averageCost: number; accuracy: number } {
     if (inputs.length !== target.length) {
       throw new Error(
@@ -336,7 +341,7 @@ export class NeuralNetwork<T> {
     let correct = 0;
     for (let sample = 0; sample < batchSize; sample++) {
       const out: number[] = this.feedForward(inputs[sample]);
-      if (this.outputMappingFn(out) === labels[sample]) correct++;
+      if (this.isCorrectFn(out) === labels[sample]) correct++;
       totalCost += out.reduce(
         (acc, actual, i) => acc + this.costFunction(target[sample][i], actual),
         0,
@@ -373,6 +378,7 @@ export class NeuralNetwork<T> {
     const data: SerializedNetwork = {
       structure: this.structure,
       outputMappingFn: this.outputMappingFn.toString(),
+      isCorrectFn: this.isCorrectFn.toString(),
       learningRate: this.learningRate,
       weights: this.weights.map((matrix) => matrix.toArray()),
       biases: this.biases.map((vector) => vector.toArray().map((row) => row[0])),
@@ -407,7 +413,7 @@ export class NeuralNetwork<T> {
     return null;
   }
 
-  static deserialize<T>(filename: string): NeuralNetwork<T> {
+  static deserialize<T, U>(filename: string): NeuralNetwork<T, U> {
     const serializedData = fs.readFileSync(filename, { encoding: 'utf-8' });
 
     const [jsonParseErr, parsedData] = trySync(() => JSON.parse(serializedData));
@@ -416,15 +422,19 @@ export class NeuralNetwork<T> {
     const [zodParseErr, data] = trySync(() => serializedNetworkSchema.parse(parsedData));
     if (zodParseErr || data == undefined) throw zodParseErr;
 
-    // deserialize outputMappingFn function
-    const [outputMappingFn, outputMappingFnParseErr] = trySync(() =>
+    // deserialize outputMappingFn and isCorrectFn
+    const [outputMappingFnParseErr, outputMappingFn] = trySync(() =>
       eval(`(${data.outputMappingFn})`),
     );
     if (outputMappingFnParseErr || outputMappingFn == undefined) throw outputMappingFnParseErr;
 
-    const nn = new NeuralNetwork(
+    const [isCorrectFnParseErr, isCorrectFn] = trySync(() => eval(`(${data.isCorrectFn})`));
+    if (isCorrectFnParseErr || isCorrectFn == undefined) throw isCorrectFnParseErr;
+
+    const nn = new NeuralNetwork<T, U>(
       data.structure,
       outputMappingFn as (nums: number[]) => T, // no way to verify
+      isCorrectFn as (nums: number[]) => U, // no way to verify
       data.learningRate,
       NeuralNetwork.activationFunctions[data.activationFn],
       NeuralNetwork.costFunctions[data.costFunction],
@@ -449,6 +459,7 @@ const outputLayerActivationFnSchema = z.enum(
 const serializedNetworkSchema = z.object({
   structure: z.number().array(),
   outputMappingFn: z.string(),
+  isCorrectFn: z.string(),
   learningRate: z.number(),
   weights: z.number().array().array().array(),
   biases: z.number().array().array(),
@@ -457,4 +468,4 @@ const serializedNetworkSchema = z.object({
   outputLayerActivationFn: outputLayerActivationFnSchema,
 });
 
-type SerializedNetwork = z.infer<typeof serializedNetworkSchema>;
+export type SerializedNetwork = z.infer<typeof serializedNetworkSchema>;
