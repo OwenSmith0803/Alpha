@@ -1,8 +1,29 @@
 import fs from 'fs';
 import { Network, NeuralNetwork } from '../NeuralNetwork';
 import '../utils/arrayUtils';
+import { getMnistData, getMnistDataBatched } from './getMnistData';
 
-const nnModelFile = './models/model-v3.json';
+const nnModelFile = './models/decoder-v3.json';
+
+function initializeEncoder(): Network<number> {
+  function outputMappingFn(out: number[]) {
+    let guess = 0;
+    for (let i = 1; i < out.length; i++) {
+      if (out[i] > out[guess]) guess = i;
+    }
+    return guess;
+  }
+
+  return new NeuralNetwork(
+    [784, 64, 64, 10],
+    outputMappingFn,
+    outputMappingFn,
+    0.01,
+    NeuralNetwork.activationFunctions.sigmoid,
+    NeuralNetwork.costFunctions.crossEntropy,
+    NeuralNetwork.outputLayerActivationFunctions.softmax,
+  );
+}
 
 function train({
   inputBatches_train,
@@ -13,6 +34,7 @@ function train({
   labelData_test,
   iterations,
   pretrainedNetwork,
+  saveToFile,
 }: {
   inputBatches_train: number[][][];
   targetBatches_train: number[][][];
@@ -22,27 +44,9 @@ function train({
   labelData_test?: number[];
   iterations: number;
   pretrainedNetwork?: Network<number> | undefined;
+  saveToFile: string;
 }): Network<number> {
-  function outputMappingFn(out: number[]) {
-    let guess = 0;
-    for (let i = 1; i < out.length; i++) {
-      if (out[i] > out[guess]) guess = i;
-    }
-    return guess;
-  }
-
-  const nn =
-    pretrainedNetwork != undefined
-      ? pretrainedNetwork
-      : new NeuralNetwork(
-          [784, 64, 64, 10],
-          outputMappingFn,
-          outputMappingFn,
-          0.01,
-          NeuralNetwork.activationFunctions.sigmoid,
-          NeuralNetwork.costFunctions.crossEntropy,
-          NeuralNetwork.outputLayerActivationFunctions.softmax,
-        );
+  const nn = pretrainedNetwork ?? initializeEncoder();
 
   // Create the folder if it doesn't exist
   if (!fs.existsSync('./models')) {
@@ -105,7 +109,7 @@ function train({
         `Testing | Cost: ${testingCost.toFixed(2)}; Accuracy: ${testingAccuracy.toFixed(2)}%`,
       );
     }
-    fs.writeFileSync(nnModelFile, nn.serialize());
+    fs.writeFileSync(saveToFile, nn.serialize());
   }
   console.log(`Training complete in ${(Date.now() - timestamp) / 1000}s`);
   return nn;
@@ -133,6 +137,7 @@ async function doTrain() {
     labelData_test,
     iterations: 20,
     pretrainedNetwork: nn,
+    saveToFile: nnModelFile,
   });
 }
 
