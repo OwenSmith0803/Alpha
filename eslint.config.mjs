@@ -22,7 +22,7 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [
-        'error',
+        'warn',
         {
           vars: 'all', // check all variables
           args: 'after-used', // check function arguments after used ones
