@@ -58,7 +58,7 @@ export class NeuralNetwork<T, U> {
     ],
   };
 
-  protected structure: number[] = [];
+  public structure: number[] = [];
   protected weights: Matrix[] = [];
   protected biases: Matrix[] = [];
   protected activationFn: MappingFn;
@@ -196,7 +196,7 @@ export class NeuralNetwork<T, U> {
     isCorrect: boolean;
     derivWeights: Matrix[];
     derivBiases: Matrix[];
-    derivCostWrtToInputs: number[];
+    derivCostWrtInputs: number[];
   };
   trainOne(
     inputs: number[],
@@ -206,7 +206,7 @@ export class NeuralNetwork<T, U> {
   ): {
     cost: number;
     isCorrect: boolean;
-    derivCostWrtToInputs: number[];
+    derivCostWrtInputs: number[];
   };
 
   trainOne(
@@ -219,7 +219,7 @@ export class NeuralNetwork<T, U> {
     isCorrect: boolean;
     derivWeights?: Matrix[];
     derivBiases?: Matrix[];
-    derivCostWrtToInputs: number[];
+    derivCostWrtInputs: number[];
   } {
     // create variables for caching
     const prenormalizedLayers: number[][] = [];
@@ -321,7 +321,7 @@ export class NeuralNetwork<T, U> {
       isCorrect,
       ...(!dryRun ? { derivWeights } : {}),
       ...(!dryRun ? { derivBiases } : {}),
-      derivCostWrtToInputs: derivCostWrtToLayerNodes,
+      derivCostWrtInputs: derivCostWrtToLayerNodes,
     };
   }
 
@@ -381,7 +381,7 @@ export class NeuralNetwork<T, U> {
       isCorrectFn: this.isCorrectFn.toString(),
       learningRate: this.learningRate,
       weights: this.weights.map((matrix) => matrix.toArray()),
-      biases: this.biases.map((vector) => vector.toArray().map((row) => row[0])),
+      biases: this.biases.map((vector) => vector.to1dArray()),
       activationFn,
       costFunction,
       outputLayerActivationFn,
