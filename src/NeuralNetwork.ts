@@ -13,7 +13,7 @@ export type OutputLayerActivationFunctionDeriv = (
 ) => number;
 
 // T is the outputted type from the .predict() method. U is the label type
-// Since T and U are usually the same, this type annotation can make code more concise
+// since T and U are usually the same, this type annotation can make code more concise
 export type Network<T> = NeuralNetwork<T, T>;
 
 export class NeuralNetwork<T, U> {
@@ -43,6 +43,11 @@ export class NeuralNetwork<T, U> {
       (out: number[], _: number[], i: number, j: number) => {
         return i === j ? out[i] * (1 - out[i]) : -out[i] * out[j];
       },
+    ],
+    sigmoid: [
+      (out: number[]) => out.map(NeuralNetwork.activationFunctions.sigmoid[0]),
+      (_: number[], prenormalized: number[], i: number, j: number) =>
+        i === j ? NeuralNetwork.activationFunctions.sigmoid[1](prenormalized[i]) : 0,
     ],
   };
 
@@ -414,6 +419,9 @@ export class NeuralNetwork<T, U> {
   }
 
   static deserialize<T, U>(filename: string): NeuralNetwork<T, U> {
+    if (!fs.existsSync(filename)) {
+      throw new Error(`Failed to deserialize model because '${filename}' does not exist`);
+    }
     const serializedData = fs.readFileSync(filename, { encoding: 'utf-8' });
 
     const [jsonParseErr, parsedData] = trySync(() => JSON.parse(serializedData));

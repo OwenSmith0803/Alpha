@@ -213,6 +213,9 @@ export class Decoder<T, U> extends NeuralNetwork<T, U> {
   }
 
   static override deserialize<T, U>(filename: string): Decoder<T, U> {
+    if (!fs.existsSync(filename)) {
+      throw new Error(`Failed to deserialize model because '${filename}' does not exist`);
+    }
     const serializedData = fs.readFileSync(filename, { encoding: 'utf-8' });
 
     const [jsonParseErr, parsedData] = trySync(() => JSON.parse(serializedData));

@@ -1,23 +1,25 @@
+import { Canvas, createCanvas } from 'canvas';
 import fs from 'fs';
+import { Decoder } from '../Decoder';
 import { Network, NeuralNetwork } from '../NeuralNetwork';
+import { train } from '../train';
 import '../utils/arrayUtils';
 import { getMnistData, getMnistDataBatched } from './getMnistData';
 
-const nnModelFile = './models/decoder-v3.json';
+function outputArrayToClassification(out: number[]) {
+  let guess = 0;
+  for (let i = 1; i < out.length; i++) {
+    if (out[i] > out[guess]) guess = i;
+  }
+  return guess;
+}
 
 function initializeEncoder(): Network<number> {
-  function outputMappingFn(out: number[]) {
-    let guess = 0;
-    for (let i = 1; i < out.length; i++) {
-      if (out[i] > out[guess]) guess = i;
-    }
-    return guess;
-  }
-
-  return new NeuralNetwork(
+  console.log('Initializing a new encoder...');
+  return new NeuralNetwork<number, number>(
     [784, 64, 64, 10],
-    outputMappingFn,
-    outputMappingFn,
+    outputArrayToClassification,
+    outputArrayToClassification,
     0.01,
     NeuralNetwork.activationFunctions.sigmoid,
     NeuralNetwork.costFunctions.crossEntropy,
@@ -25,97 +27,47 @@ function initializeEncoder(): Network<number> {
   );
 }
 
-function train({
-  inputBatches_train,
-  targetBatches_train,
-  labelBatches_train,
-  inputData_test,
-  targetData_test,
-  labelData_test,
-  iterations,
-  pretrainedNetwork,
-  saveToFile,
-}: {
-  inputBatches_train: number[][][];
-  targetBatches_train: number[][][];
-  labelBatches_train: number[][];
-  inputData_test?: number[][];
-  targetData_test?: number[][];
-  labelData_test?: number[];
-  iterations: number;
-  pretrainedNetwork?: Network<number> | undefined;
-  saveToFile: string;
-}): Network<number> {
-  const nn = pretrainedNetwork ?? initializeEncoder();
+// GPT generated
+function pixelArrayToImage(pixels: number[]): Canvas {
+  const canvas = createCanvas(28, 28);
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.createImageData(28, 28);
 
-  // Create the folder if it doesn't exist
-  if (!fs.existsSync('./models')) {
-    fs.mkdirSync('./models');
+  let i = 0;
+  for (const px of pixels) {
+    const gray = Math.round(px * 255);
+    imageData.data[i++] = gray; // R
+    imageData.data[i++] = gray; // G
+    imageData.data[i++] = gray; // B
+    imageData.data[i++] = 255; // A
   }
 
-  console.log('Training model...');
-  const timestamp = Date.now();
-  for (let iter = 0; iter < iterations; iter++) {
-    console.log(`Iteration: ${iter + 1}/${iterations}`);
-    // shuffle the data
-    for (let i = inputBatches_train.length - 1; i >= 0; i--) {
-      const randInd = Math.floor(Math.random() * (i + 1)); // generate random number between [0, i]
-      [inputBatches_train[randInd], inputBatches_train[i]] = [
-        inputBatches_train[i],
-        inputBatches_train[randInd],
-      ];
-      [targetBatches_train[randInd], targetBatches_train[i]] = [
-        targetBatches_train[i],
-        targetBatches_train[randInd],
-      ];
-      [labelBatches_train[randInd], labelBatches_train[i]] = [
-        labelBatches_train[i],
-        labelBatches_train[randInd],
-      ];
-    }
-
-    // train the model
-    let totalTrainingIterationCost = 0;
-    let totalTrainingIterationAccuracy = 0;
-    const batchSize = targetBatches_train.length;
-    for (let batch = 0; batch < batchSize; batch++) {
-      if ((batch + 1) % 50 === 0 || batch + 1 === batchSize)
-        console.log(`Batch: ${batch + 1}/${batchSize}`);
-
-      const { averageCost, accuracy } = nn.trainBatch(
-        inputBatches_train[batch],
-        targetBatches_train[batch],
-        labelBatches_train[batch],
-      );
-      totalTrainingIterationCost += averageCost;
-      totalTrainingIterationAccuracy += accuracy;
-    }
-
-    // training stats
-    const trainingCost = totalTrainingIterationCost / batchSize;
-    const trainingAccuracy = (totalTrainingIterationAccuracy / batchSize) * 100;
-    console.log(
-      `Training | Cost: ${trainingCost.toFixed(2)}; Accuracy: ${trainingAccuracy.toFixed(2)}%`,
-    );
-
-    // test the model
-    if (inputData_test != null && targetData_test != null && labelData_test != null) {
-      const testingStats = nn.testBatch(inputData_test, targetData_test, labelData_test);
-
-      // testing stats
-      const testingCost = testingStats.averageCost;
-      const testingAccuracy = testingStats.accuracy * 100;
-      console.log(
-        `Testing | Cost: ${testingCost.toFixed(2)}; Accuracy: ${testingAccuracy.toFixed(2)}%`,
-      );
-    }
-    fs.writeFileSync(saveToFile, nn.serialize());
-  }
-  console.log(`Training complete in ${(Date.now() - timestamp) / 1000}s`);
-  return nn;
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
 }
 
-async function doTrain() {
+function saveAsPng(canvas: Canvas, toFile: string) {
+  const buffer = canvas.toBuffer('image/png');
+  fs.writeFileSync(toFile, buffer);
+}
+
+function initializeDecoder(
+  encoderModel: Network<number>,
+  encoderModelFilePath: string,
+): Decoder<Canvas, number> {
+  console.log('Initializing a new decoder...');
+  return new Decoder<Canvas, number>(
+    [10, 64, 64, 784],
+    pixelArrayToImage,
+    [encoderModel, encoderModelFilePath],
+    0.01,
+    NeuralNetwork.activationFunctions.sigmoid,
+    // NeuralNetwork.activationFunctions.leakyRelu,
+    // NeuralNetwork.outputLayerActivationFunctions.sigmoid,
+  );
+}
+
+async function trainEncoder(saveToFile: string, pretrainedModelFilePath?: string) {
   const [inputBatches_train, targetBatches_train, labelBatches_train] = await getMnistDataBatched(
     './src/datasets/MNIST_CSV/mnist_train.csv',
     32,
@@ -125,9 +77,11 @@ async function doTrain() {
   );
 
   // initialize/train neural network
-  const nn = fs.existsSync(nnModelFile)
-    ? NeuralNetwork.deserialize<number, number>(nnModelFile)
-    : undefined;
+  const nn =
+    pretrainedModelFilePath && fs.existsSync(pretrainedModelFilePath)
+      ? NeuralNetwork.deserialize<number, number>(pretrainedModelFilePath)
+      : initializeEncoder();
+
   train({
     inputBatches_train,
     targetBatches_train,
@@ -136,17 +90,66 @@ async function doTrain() {
     targetData_test,
     labelData_test,
     iterations: 20,
-    pretrainedNetwork: nn,
-    saveToFile: nnModelFile,
+    nn,
+    saveToFile,
   });
 }
 
-async function testRun() {
-  let nn: Network<number>;
-  if (fs.existsSync(nnModelFile)) {
-    nn = NeuralNetwork.deserialize<number, number>(nnModelFile);
+async function trainDecoder(saveToFile: string, pretrainedModelFilePath: string): Promise<void>;
+async function trainDecoder(
+  saveToFile: string,
+  pretrainedModelFilePath: null,
+  encoderModelFilePath: string,
+): Promise<void>;
+async function trainDecoder(
+  saveToFile: string,
+  pretrainedModelFilePath: string | null,
+  encoderModelFilePath?: string,
+) {
+  // Note: we are using the Mnist target data (arrays of length 10) to train/test the decoder model
+  const [targetBatches_train, inputBatches_train, labelBatches_train] = await getMnistDataBatched(
+    './src/datasets/MNIST_CSV/mnist_train.csv',
+    32,
+  );
+  const [targetData_test, inputData_test, labelData_test] = await getMnistData(
+    './src/datasets/MNIST_CSV/mnist_test.csv',
+  );
+
+  // initialize/train neural network
+  let nn: Decoder<Canvas, number>;
+  if (pretrainedModelFilePath != null) {
+    if (!fs.existsSync(pretrainedModelFilePath)) {
+      throw new Error(`Missing model at '${pretrainedModelFilePath}'`);
+    }
+
+    nn = Decoder.deserialize<Canvas, number>(pretrainedModelFilePath);
   } else {
-    throw new Error(`Missing model at ${nnModelFile}`);
+    // Deserialize the encoder
+    const encoderModel = NeuralNetwork.deserialize<number, number>(encoderModelFilePath!);
+
+    // Initialize the decoder
+    nn = initializeDecoder(encoderModel, encoderModelFilePath!);
+  }
+
+  train({
+    inputBatches_train,
+    targetBatches_train,
+    labelBatches_train,
+    inputData_test,
+    targetData_test,
+    labelData_test,
+    iterations: 20,
+    nn,
+    saveToFile,
+  });
+}
+
+async function testEncoder(modelFilePath: string) {
+  let nn: Network<number>;
+  if (fs.existsSync(modelFilePath)) {
+    nn = NeuralNetwork.deserialize<number, number>(modelFilePath);
+  } else {
+    throw new Error(`Missing model at '${modelFilePath}'`);
   }
 
   console.log('Testing model...');
@@ -161,6 +164,7 @@ async function testRun() {
 }
 
 (async () => {
-  // await doTrain();
-  await testRun();
+  // await trainEncoder('./models/encoder-v2-90%');
+  // await testEncoder('./models/encoder-v2-90%');
+  trainDecoder('./models/decoder-v1.json', null, './models/encoder-v2-90%.json');
 })();
