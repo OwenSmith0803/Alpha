@@ -374,11 +374,6 @@ export class NeuralNetwork<T, U> {
     }
 
     const outputLayerActivationFn = this.serializeOutputLayerActivationFn();
-    if (outputLayerActivationFn == null) {
-      throw new Error(
-        'Output layer activation function could not be parsed. Please use an output layer activation function function from NeuralNetwork.outputLayerActivationFunctions.',
-      );
-    }
 
     const data: SerializedNetwork = {
       structure: this.structure,
@@ -411,6 +406,8 @@ export class NeuralNetwork<T, U> {
   }
 
   protected serializeOutputLayerActivationFn(): string | null {
+    if (this.outputLayerActivationFn == null) return null;
+
     for (const fnName in NeuralNetwork.outputLayerActivationFunctions) {
       const fnImpl = NeuralNetwork.outputLayerActivationFunctions[fnName][0];
       if (fnImpl === this.outputLayerActivationFn) return fnName;
@@ -446,7 +443,9 @@ export class NeuralNetwork<T, U> {
       data.learningRate,
       NeuralNetwork.activationFunctions[data.activationFn],
       NeuralNetwork.costFunctions[data.costFunction],
-      NeuralNetwork.outputLayerActivationFunctions[data.outputLayerActivationFn],
+      data.outputLayerActivationFn != null
+        ? NeuralNetwork.outputLayerActivationFunctions[data.outputLayerActivationFn]
+        : [null, null],
     );
 
     // copy weights/biases
@@ -460,9 +459,9 @@ export class NeuralNetwork<T, U> {
 
 const activationFnSchema = z.enum(Object.keys(NeuralNetwork.activationFunctions));
 const costFunctionSchema = z.enum(Object.keys(NeuralNetwork.costFunctions));
-const outputLayerActivationFnSchema = z.enum(
-  Object.keys(NeuralNetwork.outputLayerActivationFunctions),
-);
+const outputLayerActivationFnSchema = z
+  .enum(Object.keys(NeuralNetwork.outputLayerActivationFunctions))
+  .nullable();
 
 const serializedNetworkSchema = z.object({
   structure: z.number().array(),

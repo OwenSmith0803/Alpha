@@ -35,10 +35,7 @@ export class Decoder<T, U> extends NeuralNetwork<T, U> {
     super(
       structure,
       outputMappingFn,
-      (nums: number[]): U => {
-        const generatedPixels = this.feedForward(nums);
-        return encoderModel.predict(generatedPixels);
-      },
+      (pixels: number[]): U => encoderModel.predict(pixels),
       learningRate,
       activationFunctions,
       NeuralNetwork.costFunctions.meanSquaredError, // don't need
@@ -193,11 +190,6 @@ export class Decoder<T, U> extends NeuralNetwork<T, U> {
     }
 
     const outputLayerActivationFn = this.serializeOutputLayerActivationFn();
-    if (outputLayerActivationFn == null) {
-      throw new Error(
-        'Output layer activation function could not be parsed. Please use an output layer activation function function from NeuralNetwork.outputLayerActivationFunctions.',
-      );
-    }
 
     const data: SerializedDecoder = {
       structure: this.structure,
@@ -242,7 +234,9 @@ export class Decoder<T, U> extends NeuralNetwork<T, U> {
       [encoderModel, data.encoderModelFilePath],
       data.learningRate,
       NeuralNetwork.activationFunctions[data.activationFn],
-      NeuralNetwork.outputLayerActivationFunctions[data.outputLayerActivationFn],
+      data.outputLayerActivationFn != null
+        ? NeuralNetwork.outputLayerActivationFunctions[data.outputLayerActivationFn]
+        : [null, null],
     );
 
     // copy weights/biases
@@ -255,9 +249,9 @@ export class Decoder<T, U> extends NeuralNetwork<T, U> {
 }
 
 const activationFnSchema = z.enum(Object.keys(NeuralNetwork.activationFunctions));
-const outputLayerActivationFnSchema = z.enum(
-  Object.keys(NeuralNetwork.outputLayerActivationFunctions),
-);
+const outputLayerActivationFnSchema = z
+  .enum(Object.keys(NeuralNetwork.outputLayerActivationFunctions))
+  .nullable();
 
 const serializedDecoderSchema = z.object({
   structure: z.number().array(),

@@ -101,6 +101,7 @@ async function trainDecoder(
   pretrainedModelFilePath: null,
   encoderModelFilePath: string,
 ): Promise<void>;
+
 async function trainDecoder(
   saveToFile: string,
   pretrainedModelFilePath: string | null,
@@ -163,8 +164,40 @@ async function testEncoder(modelFilePath: string) {
   console.log(`Cost: ${testingCost.toFixed(2)}; Accuracy: ${testingAccuracy.toFixed(2)}%`);
 }
 
+async function testDecoder(modelFilePath: string) {
+  let nn: Decoder<Canvas, number>;
+  if (fs.existsSync(modelFilePath)) {
+    nn = Decoder.deserialize<Canvas, number>(modelFilePath);
+  } else {
+    throw new Error(`Missing model at '${modelFilePath}'`);
+  }
+
+  console.log('Testing model...');
+  // Note: we are using the Mnist target data (arrays of length 10) to train/test the decoder model
+  const [targetData_test, inputData_test, labelData_test] = await getMnistData(
+    './src/datasets/MNIST_CSV/mnist_test.csv',
+  );
+
+  const testingStats = nn.testBatch(inputData_test, targetData_test, labelData_test);
+  const testingCost = testingStats.averageCost;
+  const testingAccuracy = testingStats.accuracy * 100;
+  console.log(`Cost: ${testingCost.toFixed(2)}; Accuracy: ${testingAccuracy.toFixed(2)}%`);
+
+  console.log('Generating images...');
+}
+
+function generateImages(decoder: Decoder<Canvas, number>) {
+  const inputs: number[] = Array(10).fill(0);
+  for (let i = 0; i < 10; i++) {
+    inputs[i] = 1;
+    saveAsPng(decoder.predict(inputs), `generated-${i}.png`);
+    inputs[i] = 0;
+  }
+}
+
 (async () => {
   // await trainEncoder('./models/encoder-v2-90%');
   // await testEncoder('./models/encoder-v2-90%');
-  trainDecoder('./models/decoder-v1.json', null, './models/encoder-v2-90%.json');
+  await trainDecoder('./models/decoder-v1.json', null, './models/encoder-v2-90%.json');
+  await testDecoder('./models/decoder-v1.json');
 })();

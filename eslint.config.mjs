@@ -62,6 +62,7 @@ export default tseslint.config(
             'csv',
             'prenormalized',
             'ctx',
+            'nullable',
           ],
           skipIfMatch: ['https?://[^\\s]*'],
           minLength: 3,
