@@ -8,7 +8,7 @@ export function train<T, U>({
   inputData_test,
   targetData_test,
   labelData_test,
-  iterations,
+  epochs,
   nn,
   saveToFile,
 }: {
@@ -18,7 +18,7 @@ export function train<T, U>({
   inputData_test?: number[][];
   targetData_test?: number[][];
   labelData_test?: U[];
-  iterations: number;
+  epochs: number;
   nn: NeuralNetwork<T, U>;
   saveToFile: string;
 }): NeuralNetwork<T, U> {
@@ -29,8 +29,8 @@ export function train<T, U>({
 
   console.log('Training model...');
   const timestamp = Date.now();
-  for (let iter = 0; iter < iterations; iter++) {
-    console.log(`Iteration: ${iter + 1}/${iterations}`);
+  for (let iter = 0; iter < epochs; iter++) {
+    console.log(`Epoch: ${iter + 1}/${epochs}`);
     // shuffle the data
     for (let i = inputBatches_train.length - 1; i >= 0; i--) {
       const randInd = Math.floor(Math.random() * (i + 1)); // generate random number between [0, i]
@@ -49,8 +49,8 @@ export function train<T, U>({
     }
 
     // train the model
-    let totalTrainingIterationCost = 0;
-    let totalTrainingIterationAccuracy = 0;
+    let totalTrainingEpochCost = 0;
+    let totalTrainingEpochAccuracy = 0;
     const batchSize = targetBatches_train.length;
     for (let batch = 0; batch < batchSize; batch++) {
       if ((batch + 1) % 50 === 0 || batch + 1 === batchSize)
@@ -61,13 +61,13 @@ export function train<T, U>({
         targetBatches_train[batch],
         labelBatches_train[batch],
       );
-      totalTrainingIterationCost += averageCost;
-      totalTrainingIterationAccuracy += accuracy;
+      totalTrainingEpochCost += averageCost;
+      totalTrainingEpochAccuracy += accuracy;
     }
 
     // training stats
-    const trainingCost = totalTrainingIterationCost / batchSize;
-    const trainingAccuracy = (totalTrainingIterationAccuracy / batchSize) * 100;
+    const trainingCost = totalTrainingEpochCost / batchSize;
+    const trainingAccuracy = (totalTrainingEpochAccuracy / batchSize) * 100;
     console.log(
       `Training | Cost: ${trainingCost.toFixed(2)}; Accuracy: ${trainingAccuracy.toFixed(2)}%`,
     );

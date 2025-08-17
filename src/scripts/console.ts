@@ -1,5 +1,5 @@
-import { Canvas, createCanvas } from 'canvas';
 import fs from 'fs';
+import sharp from 'sharp';
 import { Decoder } from '../Decoder';
 import { Network, NeuralNetwork } from '../NeuralNetwork';
 import { train } from '../train';
@@ -28,35 +28,47 @@ function initializeEncoder(): Network<number> {
 }
 
 // GPT generated
-function pixelArrayToImage(pixels: number[]): Canvas {
-  const canvas = createCanvas(28, 28);
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.createImageData(28, 28);
+type Image = Buffer<ArrayBufferLike>;
+function pixelArrayToImage(pixels: number[]): Image {
+  const width = 28;
+  const height = 28;
+  const rgba = Buffer.alloc(width * height * 4);
 
   let i = 0;
   for (const px of pixels) {
     const gray = Math.round(px * 255);
-    imageData.data[i++] = gray; // R
-    imageData.data[i++] = gray; // G
-    imageData.data[i++] = gray; // B
-    imageData.data[i++] = 255; // A
+    rgba[i++] = gray; // R
+    rgba[i++] = gray; // G
+    rgba[i++] = gray; // B
+    rgba[i++] = gray; // A
   }
-
-  ctx.putImageData(imageData, 0, 0);
-  return canvas;
+  return rgba;
 }
 
-function saveAsPng(canvas: Canvas, toFile: string) {
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(toFile, buffer);
+// Convert Image type to PNG
+async function saveAsPng(rgba: Image, toFile: string) {
+  const width = 28;
+  const height = 28;
+
+  const pngBuffer = await sharp(rgba, {
+    raw: {
+      width,
+      height,
+      channels: 4, // RGBA
+    },
+  })
+    .png()
+    .toBuffer();
+
+  fs.writeFileSync(toFile, pngBuffer);
 }
 
 function initializeDecoder(
   encoderModel: Network<number>,
   encoderModelFilePath: string,
-): Decoder<Canvas, number> {
+): Decoder<Image, number> {
   console.log('Initializing a new decoder...');
-  return new Decoder<Canvas, number>(
+  return new Decoder<Image, number>(
     [10, 64, 64, 784],
     pixelArrayToImage,
     [encoderModel, encoderModelFilePath],
@@ -89,7 +101,7 @@ async function trainEncoder(saveToFile: string, pretrainedModelFilePath?: string
     inputData_test,
     targetData_test,
     labelData_test,
-    iterations: 20,
+    epochs: 20,
     nn,
     saveToFile,
   });
@@ -117,13 +129,13 @@ async function trainDecoder(
   );
 
   // initialize/train neural network
-  let nn: Decoder<Canvas, number>;
+  let nn: Decoder<Image, number>;
   if (pretrainedModelFilePath != null) {
     if (!fs.existsSync(pretrainedModelFilePath)) {
       throw new Error(`Missing model at '${pretrainedModelFilePath}'`);
     }
 
-    nn = Decoder.deserialize<Canvas, number>(pretrainedModelFilePath);
+    nn = Decoder.deserialize<Image, number>(pretrainedModelFilePath);
   } else {
     // Deserialize the encoder
     const encoderModel = NeuralNetwork.deserialize<number, number>(encoderModelFilePath!);
@@ -139,7 +151,7 @@ async function trainDecoder(
     inputData_test,
     targetData_test,
     labelData_test,
-    iterations: 20,
+    epochs: 20,
     nn,
     saveToFile,
   });
@@ -165,9 +177,9 @@ async function testEncoder(modelFilePath: string) {
 }
 
 async function testDecoder(modelFilePath: string) {
-  let nn: Decoder<Canvas, number>;
+  let nn: Decoder<Image, number>;
   if (fs.existsSync(modelFilePath)) {
-    nn = Decoder.deserialize<Canvas, number>(modelFilePath);
+    nn = Decoder.deserialize<Image, number>(modelFilePath);
   } else {
     throw new Error(`Missing model at '${modelFilePath}'`);
   }
@@ -182,22 +194,29 @@ async function testDecoder(modelFilePath: string) {
   const testingCost = testingStats.averageCost;
   const testingAccuracy = testingStats.accuracy * 100;
   console.log(`Cost: ${testingCost.toFixed(2)}; Accuracy: ${testingAccuracy.toFixed(2)}%`);
-
-  console.log('Generating images...');
 }
 
-function generateImages(decoder: Decoder<Canvas, number>) {
+async function generateImages(modelFilePath: string) {
+  console.log('Generating images...');
+  let decoder: Decoder<Image, number>;
+  if (fs.existsSync(modelFilePath)) {
+    decoder = Decoder.deserialize<Image, number>(modelFilePath);
+  } else {
+    throw new Error(`Missing model at '${modelFilePath}'`);
+  }
+
   const inputs: number[] = Array(10).fill(0);
   for (let i = 0; i < 10; i++) {
     inputs[i] = 1;
-    saveAsPng(decoder.predict(inputs), `generated-${i}.png`);
+    saveAsPng(decoder.predict(inputs), `./generated-images/generated-${i}.png`);
     inputs[i] = 0;
   }
 }
 
 (async () => {
-  // await trainEncoder('./models/encoder-v2-90%');
-  // await testEncoder('./models/encoder-v2-90%');
-  await trainDecoder('./models/decoder-v1.json', null, './models/encoder-v2-90%.json');
+  // await trainEncoder('./models/encoder-v2-90%.json');
+  // await testEncoder('./models/encoder-v2-90%.json');
+  // await trainDecoder('./models/decoder-v1.json', null, './models/encoder-v2-90%.json');
   await testDecoder('./models/decoder-v1.json');
+  // await generateImages('./models/decoder-v1.json');
 })();
