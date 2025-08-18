@@ -1,8 +1,7 @@
 {
-  "name": "ai",
+  "name": "alpha",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
     "prettify": "prettier . --write",
     "console": "ts-node ./src/scripts/console.ts"
